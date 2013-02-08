@@ -19,6 +19,8 @@
 
 #define BACKLOG 10	 // how many pending connections queue will hold
 
+#define MAXDATASIZE 100
+
 void sigchld_handler(int s)
 {
 	while(waitpid(-1, NULL, WNOHANG) > 0);
@@ -44,6 +46,8 @@ int main(void)
 	int yes=1;
 	char s[INET6_ADDRSTRLEN];
 	int rv;
+	char buf[MAXDATASIZE];
+	int numbytes;
 
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
@@ -113,12 +117,44 @@ int main(void)
 			s, sizeof s);
 		printf("server: got connection from %s\n", s);
 
-		if (!fork()) { // this is the child process
-			close(sockfd); // child doesn't need the listener
-			if (send(new_fd, "Hello, world!", 13, 0) == -1)
-				perror("send");
-			close(new_fd);
-			exit(0);
+		if ((numbytes = recv(new_fd, buf, MAXDATASIZE-1, 0)) == -1) {
+			perror("recv");
+			exit(1);
+		}
+
+		buf[numbytes] = '\0';
+
+		printf("server: received '%s'\n",buf);
+
+		switch(buf[0]){
+			case 'l':
+				printf("executing list command\n");
+				if (!fork()) {
+					close(sockfd);
+					if (send(new_fd, "Received list command",21,0) == -1)
+						perror("send");
+					close(new_fd);
+					exit(0);
+				}
+				break;
+			case 'c':
+				if (!fork()) {
+					close(sockfd);
+					if (send(new_fd, "Received check command",22,0) == -1)
+						perror("send");
+					close(new_fd);
+					exit(0);
+				}
+				break;
+			case 'g':
+				if (!fork()) {
+					close(sockfd);
+					if (send(new_fd, "Received get command",20,0) == -1)
+						perror("send");
+					close(new_fd);
+					exit(0);
+				}
+				break;
 		}
 		close(new_fd);  // parent doesn't need this
 	}
