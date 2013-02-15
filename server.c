@@ -19,7 +19,7 @@
 
 #define BACKLOG 10	 // how many pending connections queue will hold
 
-#define MAXDATASIZE 100
+#define MAXDATASIZE 255
 
 void sigchld_handler(int s)
 {
@@ -47,7 +47,12 @@ int main(void)
 	char s[INET6_ADDRSTRLEN];
 	int rv;
 	char buf[MAXDATASIZE];
+	char str[MAXDATASIZE];
 	int numbytes;
+	int in[2],out[2],n,pid;
+	FILE* fd;
+	char more[1];
+	more[0]=-1;
 
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
@@ -121,36 +126,69 @@ int main(void)
 			perror("recv");
 			exit(1);
 		}
-
 		buf[numbytes] = '\0';
 
 		printf("server: received '%s'\n",buf);
 
 		switch(buf[0]){
 			case 'l':
-				printf("executing list command\n");
 				if (!fork()) {
 					close(sockfd);
-					if (send(new_fd, "Received list command",21,0) == -1)
-						perror("send");
+					fd=(FILE*)popen("/bin/ls","r");
+					while(fgets(buf,MAXDATASIZE,fd))
+						send(new_fd,buf,strlen(buf),0);
 					close(new_fd);
 					exit(0);
 				}
 				break;
 			case 'c':
 				if (!fork()) {
+					if((numbytes=recv(new_fd, buf, MAXDATASIZE-1, 0)) == -1) {
+						perror("recv");
+						exit(1);
+					}
+					buf[numbytes] = '\0';
+
+					if(fopen(buf,"r")){
+						send(new_fd,"File <",6,0);
+						send(new_fd,buf,strlen(buf),0);
+						send(new_fd,"> exists",8,0);
+					}
+					else{
+						send(new_fd,"File <",6,0);
+						send(new_fd,buf,strlen(buf),0);
+						send(new_fd,"> is not found",14,0);
+					}
 					close(sockfd);
-					if (send(new_fd, "Received check command",22,0) == -1)
-						perror("send");
 					close(new_fd);
 					exit(0);
 				}
 				break;
 			case 'g':
 				if (!fork()) {
+					//get file name
+					if((numbytes=recv(new_fd, buf, MAXDATASIZE-1, 0)) == -1) {
+						perror("recv");
+						exit(1);
+					}
+					buf[numbytes] = '\0';
+
+					//check for the file
+					if(!fopen(buf,"r")){
+						send(new_fd,"File <",6,0);
+						send(new_fd,buf,strlen(buf),0);
+						send(new_fd,"> is not found",14,0);
+						exit(0);
+					}
+
+					//send file contents
+					strcpy(str,"/bin/cat ");
+					strcat(str,buf);
+					fd=(FILE*)popen(str,"r");
+					while(fgets(buf,MAXDATASIZE,fd))
+						send(new_fd,buf,strlen(buf),0);
+
 					close(sockfd);
-					if (send(new_fd, "Received get command",20,0) == -1)
-						perror("send");
 					close(new_fd);
 					exit(0);
 				}
